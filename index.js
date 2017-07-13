@@ -79,31 +79,33 @@ function handleGroupFunction(n2kMsg) {
   function handleRequestGroupFunction(n2kMsg) {
     // We really don't support group function requests for any PGNs yet -> always respond with pgnErrorCode 1 = "PGN not supported"
     console.log("Sending 'PGN Not Supported' Group Function response for requested PGN", n2kMsg.fields.PGN)
-    socketcanWriter.stdin.write(createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}) + '\n')
+    sendPGN(createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
   }
 
   function handleCommandGroupFunction(n2kMsg) {
     // We really don't support group function commands for any PGNs yet -> always respond with pgnErrorCode 1 = "PGN not supported"
     console.log("Sending 'PGN Not Supported' Group Function response for commanded PGN", n2kMsg.fields.PGN)
-    socketcanWriter.stdin.write(createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}) + '\n')
+    sendPGN(createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
   }
 }
 
 function sendProductInformation() {
   console.log("Sending product info..")
-  socketcanWriter.stdin.write(createProductInformationPGN(productInfo) + '\n')
+  sendPGN(createProductInformationPGN(productInfo))
 }
 
 function sendAddressClaim() {
   console.log("Sending address claim..")
-  socketcanWriter.stdin.write(createISOAddressClaimPGN(addressClaim) + '\n')
+  sendPGN(createISOAddressClaimPGN(addressClaim))
 }
 
 function sendNAKAcknowledgement(dst, pgn) {
   console.log("Sending NAK acknowledgement for PGN", pgn, "to", dst)
-  socketcanWriter.stdin.write(createISOAcknowledgementPGN({src: ownAddr, dst, control: 1, groupFunction: 255, pgn}) + '\n')
+  sendPGN(createISOAcknowledgementPGN({src: ownAddr, dst, control: 1, groupFunction: 255, pgn}))
 }
 
+
+function sendPGN(fastFormatPgn) { socketcanWriter.stdin.write(fastFormatPgn + '\n') }
 
 
 function createISOAddressClaimPGN({src, dst, uniqueNumber, manufacturerCode, deviceFunction, deviceClass, deviceInstanceLower, deviceInstanceUpper, systemInstance, industryGroup}) {
