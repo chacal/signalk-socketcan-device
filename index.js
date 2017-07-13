@@ -40,15 +40,17 @@ const n2kMessages = Bacon.fromEvent(readline.createInterface({input: process.std
 const socketcanWriter = require('child_process').spawn('sh', ['-c', 'socketcan-writer can0'])
 
 
-n2kMessages
-  .filter(m => m.pgn == 59904 && (m.dst == 255 || m.dst == ownAddr))
-  .onValue(handleISORequest)
-
-n2kMessages
-  .filter(m => m.pgn == 126208 && (m.dst == 255 || m.dst == ownAddr))
-  .onValue(handleGroupFunction)
+registerPgnHandler(59904, handleISORequest)
+registerPgnHandler(126208, handleGroupFunction)
 
 sendAddressClaim()
+
+
+function registerPgnHandler(pgnNumber, handler) {
+  n2kMessages
+    .filter(m => m.pgn == pgnNumber && (m.dst == 255 || m.dst == ownAddr))
+    .onValue(handler)
+}
 
 
 function handleISORequest(n2kMsg) {
