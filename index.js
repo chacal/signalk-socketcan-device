@@ -11,6 +11,7 @@ let ownAddr
 // Constructor & message forwarding
 //
 function SignalKSocketcanDevice(options) {
+  debug(`Starting signalk-socketcan-device with options ${JSON.stringify(options)}..`)
   Transform.call(this, { objectMode: true })
 
   const canDevice = options.canDevice || 'can0'
