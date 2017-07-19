@@ -22,7 +22,7 @@ function SignalKSocketcanDevice(options) {
 
 require('util').inherits(SignalKSocketcanDevice, Transform)
 
-_transform = function(chunk, encoding, done) {
+SignalKSocketcanDevice.prototype._transform = function(chunk, encoding, done) {
   n2kMessages.push(chunk)    // Push to our own event stream ..
   this.push(chunk)           // .. and pass through everything we get
   done()
