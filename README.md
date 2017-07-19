@@ -55,3 +55,7 @@ Note that `-nv` option needs to be given to `analyzer` to include raw values of 
   `canDevice` Socketcan device to which the data is written. Defaults to `can0`.
   
   `useDummySocketcanWriter` When set to `true` no data is written to CAN bus, but PGNs are written to the debug output.
+
+## Thanks
+
+All the heavy lifting was already done by others. Many thanks especially for Timo Lappalainen for his [NMEA2000](https://github.com/ttlappalainen/NMEA2000) library and Kees Verruijt for [canboat](https://github.com/canboat/canboat).
