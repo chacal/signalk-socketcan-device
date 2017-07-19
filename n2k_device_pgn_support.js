@@ -1,6 +1,7 @@
 const R = require('ramda')
 const concentrate = require('concentrate')
 const uint64 = require('cuint').UINT64
+const moment = require('moment')
 
 const timestampFmt = "YYYY-MM-DD-HH:mm:ss.SSS"
 
