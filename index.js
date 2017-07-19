@@ -18,6 +18,7 @@ function SignalKSocketcanDevice(options) {
   socketcanWriter = options.useDummySocketcanWriter ? dummySocketcanWriter() : require('child_process').spawn('sh', ['-c', `socketcan-writer ${canDevice}`])
 
   ownAddr = options.n2kAddress || 100
+  startDevice()
 }
 
 require('util').inherits(SignalKSocketcanDevice, Transform)
@@ -33,11 +34,13 @@ SignalKSocketcanDevice.prototype._transform = function(chunk, encoding, done) {
 //
 // N2k device main logic
 //
-registerPgnHandler(59904, handleISORequest)
-registerPgnHandler(126208, handleGroupFunction)
-registerPgnHandler(60928, handleISOAddressClaim)
+function startDevice() {
+  registerPgnHandler(59904, handleISORequest)
+  registerPgnHandler(126208, handleGroupFunction)
+  registerPgnHandler(60928, handleISOAddressClaim)
 
-sendAddressClaim()
+  sendAddressClaim()
+}
 
 
 
