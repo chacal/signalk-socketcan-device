@@ -91,14 +91,14 @@ function handleISOAddressClaim(n2kMsg) {
   }
 
   const uint64ValueFromReceivedClaim = PgnSupport.getISOAddressClaimAsUint64({
-    uniqueNumber: n2kMsg.fields["Unique Number"],
-    manufacturerCode: n2kMsg.fields["Manufacturer Code"],
+    uniqueNumber: parseInt(n2kMsg.fields["Unique Number"]),
+    manufacturerCode: n2kMsg.fields["Manufacturer Code"].value || n2kMsg.fields["Manufacturer Code"],
     deviceFunction: n2kMsg.fields["Device Function"],
-    deviceClass: n2kMsg.fields["Device Class"],
+    deviceClass: n2kMsg.fields["Device Class"].value || n2kMsg.fields["Device Class"],
     deviceInstanceLower: n2kMsg.fields["Device Instance Lower"],
     deviceInstanceUpper: n2kMsg.fields["Device Instance Upper"],
     systemInstance: n2kMsg.fields["System Instance"],
-    industryGroup: n2kMsg.fields["Industry Group"]
+    industryGroup: n2kMsg.fields["Industry Group"].value || n2kMsg.fields["Industry Group"]
   })
   const uint64ValueFromOurOwnClaim = PgnSupport.getISOAddressClaimAsUint64(PgnSupport.addressClaim(ownAddr))
 
