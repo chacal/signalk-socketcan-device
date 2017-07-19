@@ -8,6 +8,7 @@ The provider passes its input unaltered to the next provider in the chain. This 
 
 **Note!** This implementation is far from being complete according to N2k specification and proper care should be taken when using this provider as it writes to the N2k bus and thus can produce completely unexpected behavior of any of the connected devices! 
 
+![Example screenshot](example.png?raw=true "Example screenshot")
 
 ## Usage
 
