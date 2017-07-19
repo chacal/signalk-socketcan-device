@@ -111,6 +111,7 @@ function handleISOAddressClaim(n2kMsg) {
     debug(`Address conflict detected! Changed our address to ${ownAddr}.`)
   } else {
     // Address claim data is exactly the same than we have -> assume it was sent by ourselves -> do nothing
+    debug(`Address claim with identical data detected. Assuming it was sent by us..`)
   }
 
   function increaseOwnAddress() {
