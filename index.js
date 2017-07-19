@@ -86,6 +86,10 @@ function handleGroupFunction(n2kMsg) {
 function handleISOAddressClaim(n2kMsg) {
   debug('Checking ISO address claim. Source:', n2kMsg.src)
 
+  if(n2kMsg.src !== ownAddr) {
+    return
+  }
+
   const uint64ValueFromReceivedClaim = PgnSupport.getISOAddressClaimAsUint64({
     uniqueNumber: n2kMsg.fields["Unique Number"],
     manufacturerCode: n2kMsg.fields["Manufacturer Code"],
