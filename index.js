@@ -1,58 +1,48 @@
-const moment = require('moment')
-const concentrate = require('concentrate')
-const R = require('ramda')
+const Transform = require('stream').Transform
 const Bacon = require('baconjs')
-const readline = require('readline')
+const debug = require('debug')('signalk-socketcan-device')
+const PgnSupport = require('./n2k_device_pgn_support')
 
-const timestampFmt = "YYYY-MM-DD-HH:mm:ss.SSS"
-let ownAddr = 100
+const n2kMessages = new Bacon.Bus()
+let socketcanWriter
+let ownAddr
 
-const addressClaim = {
-  src: ownAddr,
-  dst: 255,
-  uniqueNumber: 1,
-  manufacturerCode: 2000,
-  deviceFunction: 130,  // PC gateway
-  deviceClass: 25,      // Inter/Intranetwork Device
-  deviceInstanceLower: 0,
-  deviceInstanceUpper: 0,
-  systemInstance: 0,
-  industryGroup: 4      // Marine
+//
+// Constructor & message forwarding
+//
+function SignalKSocketcanDevice(options) {
+  Transform.call(this, { objectMode: true })
+
+  const canDevice = options.canDevice || 'can0'
+  socketcanWriter = options.useDummySocketcanWriter ? dummySocketcanWriter() : require('child_process').spawn('sh', ['-c', `socketcan-writer ${canDevice}`])
+
+  ownAddr = options.n2kAddress || 100
 }
 
-const productInfo = {
-  src: ownAddr,
-  dst: 255,
-  n2kVersion: 1300,
-  productCode: 666,   // Just made up..
-  modelId: "SignalK socketcan n2k-device",
-  swCode: "1.0",
-  modelVersion: "SignalK",
-  modelSerialCode: "123456",
-  certificationLevel: 0,
-  loadEquivalency: 1
+require('util').inherits(SignalKSocketcanDevice, Transform)
+
+_transform = function(chunk, encoding, done) {
+  n2kMessages.push(chunk)    // Push to our own event stream ..
+  this.push(chunk)           // .. and pass through everything we get
+  done()
 }
 
 
-const n2kMessages = Bacon.fromEvent(readline.createInterface({input: process.stdin}), 'line')
-  .map(JSON.parse)
 
-const socketcanWriter = require('child_process').spawn('sh', ['-c', 'socketcan-writer can0'])
-
-
+//
+// N2k device main logic
+//
 registerPgnHandler(59904, handleISORequest)
 registerPgnHandler(126208, handleGroupFunction)
+registerPgnHandler(60928, handleISOAddressClaim)
 
 sendAddressClaim()
 
 
-function registerPgnHandler(pgnNumber, handler) {
-  n2kMessages
-    .filter(m => m.pgn == pgnNumber && (m.dst == 255 || m.dst == ownAddr))
-    .onValue(handler)
-}
 
-
+//
+// N2k device message handlers
+//
 function handleISORequest(n2kMsg) {
   switch (n2kMsg.fields.PGN) {
     case 126996:  // Product Information request
@@ -62,7 +52,7 @@ function handleISORequest(n2kMsg) {
       sendAddressClaim()
       break;
     default:
-      console.log(`Got unsupported ISO request for PGN ${n2kMsg.fields.PGN}. Sending NAK.`)
+      debug(`Got unsupported ISO request for PGN ${n2kMsg.fields.PGN}. Sending NAK.`)
       sendNAKAcknowledgement(n2kMsg.src, n2kMsg.fields.PGN)
   }
 }
@@ -73,109 +63,89 @@ function handleGroupFunction(n2kMsg) {
   } else if(n2kMsg.fields["Function Code"] === 'Command') {
     handleCommandGroupFunction(n2kMsg)
   } else {
-    console.log('Got unsupported Group Function PGN:', JSON.stringify(n2kMsg))
+    debug('Got unsupported Group Function PGN:', JSON.stringify(n2kMsg))
   }
 
   function handleRequestGroupFunction(n2kMsg) {
     // We really don't support group function requests for any PGNs yet -> always respond with pgnErrorCode 1 = "PGN not supported"
-    console.log("Sending 'PGN Not Supported' Group Function response for requested PGN", n2kMsg.fields.PGN)
-    sendPGN(createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
+    debug("Sending 'PGN Not Supported' Group Function response for requested PGN", n2kMsg.fields.PGN)
+    sendPGN(PgnSupport.createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
   }
 
   function handleCommandGroupFunction(n2kMsg) {
     // We really don't support group function commands for any PGNs yet -> always respond with pgnErrorCode 1 = "PGN not supported"
-    console.log("Sending 'PGN Not Supported' Group Function response for commanded PGN", n2kMsg.fields.PGN)
-    sendPGN(createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
+    debug("Sending 'PGN Not Supported' Group Function response for commanded PGN", n2kMsg.fields.PGN)
+    sendPGN(PgnSupport.createAcknowledgeGroupFunctionPGN({src: ownAddr, dst: n2kMsg.src, commandedPgn: n2kMsg.fields.PGN, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
   }
 }
 
+function handleISOAddressClaim(n2kMsg) {
+  debug('Checking ISO address claim. Source:', n2kMsg.src)
+
+  const uint64ValueFromReceivedClaim = PgnSupport.getISOAddressClaimAsUint64({
+    uniqueNumber: n2kMsg.fields["Unique Number"],
+    manufacturerCode: n2kMsg.fields["Manufacturer Code"],
+    deviceFunction: n2kMsg.fields["Device Function"],
+    deviceClass: n2kMsg.fields["Device Class"],
+    deviceInstanceLower: n2kMsg.fields["Device Instance Lower"],
+    deviceInstanceUpper: n2kMsg.fields["Device Instance Upper"],
+    systemInstance: n2kMsg.fields["System Instance"],
+    industryGroup: n2kMsg.fields["Industry Group"]
+  })
+  const uint64ValueFromOurOwnClaim = PgnSupport.getISOAddressClaimAsUint64(PgnSupport.addressClaim(ownAddr))
+
+  if(uint64ValueFromOurOwnClaim.lt(uint64ValueFromReceivedClaim)) {
+    sendAddressClaim()      // We have smaller address claim data -> we can keep our address -> re-claim it
+    debug(`Address conflict detected! Kept our address as ${ownAddr}.`)
+  } else if(uint64ValueFromOurOwnClaim.gt(uint64ValueFromReceivedClaim)) {
+    increaseOwnAddress()    // We have bigger address claim data -> we have to change our address
+    sendAddressClaim()
+    debug(`Address conflict detected! Changed our address to ${ownAddr}.`)
+  } else {
+    // Address claim data is exactly the same than we have -> assume it was sent by ourselves -> do nothing
+  }
+
+  function increaseOwnAddress() {
+    ownAddr = (ownAddr + 1) % 253
+  }
+}
+
+
+
+//
+// Helpers
+//
 function sendProductInformation() {
-  console.log("Sending product info..")
-  sendPGN(createProductInformationPGN(productInfo))
+  debug("Sending product info..")
+  sendPGN(PgnSupport.createProductInformationPGN(PgnSupport.productInfo(ownAddr)))
 }
 
 function sendAddressClaim() {
-  console.log("Sending address claim..")
-  sendPGN(createISOAddressClaimPGN(addressClaim))
+  debug("Sending address claim..")
+  sendPGN(PgnSupport.createISOAddressClaimPGN(PgnSupport.addressClaim(ownAddr)))
 }
 
 function sendNAKAcknowledgement(dst, pgn) {
-  console.log("Sending NAK acknowledgement for PGN", pgn, "to", dst)
-  sendPGN(createISOAcknowledgementPGN({src: ownAddr, dst, control: 1, groupFunction: 255, pgn}))
+  debug("Sending NAK acknowledgement for PGN", pgn, "to", dst)
+  sendPGN(PgnSupport.createISOAcknowledgementPGN({src: ownAddr, dst, control: 1, groupFunction: 255, pgn}))
 }
-
 
 function sendPGN(fastFormatPgn) { socketcanWriter.stdin.write(fastFormatPgn + '\n') }
 
-
-function createISOAddressClaimPGN({src, dst, uniqueNumber, manufacturerCode, deviceFunction, deviceClass, deviceInstanceLower, deviceInstanceUpper, systemInstance, industryGroup}) {
-  const fmt = `${moment().utc().format(timestampFmt)},6,60928,${src},${dst},8,`
-  const data = concentrate()
-    .int32(uniqueNumber & 0x1FFFFF | (manufacturerCode & 0x7FF) << 21)
-    .uint8(deviceInstanceLower & 0x7 | (deviceInstanceUpper & 0x1F) << 3)
-    .uint8(deviceFunction)
-    .uint8((deviceClass & 0x7f) << 1)
-    .uint8((0x80 | ((industryGroup & 0x7) << 4) | (systemInstance & 0x0f)))
-    .result()
-
-  return fmt + R.splitEvery(2, data.toString('hex')).join(',')
+function registerPgnHandler(pgnNumber, handler) {
+  n2kMessages
+    .filter(m => m.pgn == pgnNumber && (m.dst == 255 || m.dst == ownAddr))
+    .onValue(handler)
 }
 
-
-function createProductInformationPGN({src, dst, n2kVersion, productCode, modelId, swCode, modelVersion, modelSerialCode, certificationLevel, loadEquivalency}) {
-  const fmt = `${moment().utc().format(timestampFmt)},6,126996,${src},${dst},134,`
-  const data = concentrate()
-    .int16(n2kVersion)
-    .int16(productCode)
-    .buffer(strBuf(modelId, 32))
-    .buffer(strBuf(swCode, 32))
-    .buffer(strBuf(modelVersion, 32))
-    .buffer(strBuf(modelSerialCode, 32))
-    .uint8(certificationLevel)
-    .uint8(loadEquivalency)
-    .result()
-
-  return fmt + R.splitEvery(2, data.toString('hex')).join(',')
-}
-
-function createISOAcknowledgementPGN({src, dst, control, groupFunction, pgn}) {
-  const fmt = `${moment().utc().format(timestampFmt)},6,59392,${src},${dst},8,`
-  const data = concentrate()
-    .uint8(control)
-    .uint8(groupFunction)
-    .uint8(255)
-    .uint8(255)
-    .uint8(255)
-    .uint8(pgn & 0xFF)
-    .uint8(pgn >> 8 & 0xFF)
-    .uint8(pgn >> 16 & 0xFF)
-    .result()
-
-  return fmt + R.splitEvery(2, data.toString('hex')).join(',')
-}
-
-function createAcknowledgeGroupFunctionPGN({src, dst, commandedPgn, pgnErrorCode, transmissionOrPriorityErrorCode}) {
-  const fmt = `${moment().utc().format(timestampFmt)},3,126208,${src},${dst},8,00,06,02,`
-  const data = concentrate()
-    .uint8(commandedPgn & 0xFF)
-    .uint8(commandedPgn >> 8 & 0xFF)
-    .uint8(commandedPgn >> 16 & 0xFF)
-    .uint8(pgnErrorCode | transmissionOrPriorityErrorCode << 4)
-    .uint8(0)  // Always assume 0 parameters
-    .result()
-
-  return fmt + R.splitEvery(2, data.toString('hex')).join(',')
-}
-
-function strBuf(str, bufLength) {
-  const buf = Buffer.alloc(bufLength)
-  buf.write(str, 'ascii')
-  return buf
+function dummySocketcanWriter() {
+  return {
+    stdin: {
+      write: data => debug('CAN TX:', data)
+    }
+  }
 }
 
 
 
-//console.log(createISOAddressClaimPGN(addressClaim))
-//console.log(createProductInformationPGN(productInfo))
-//console.log(createAcknowledgeGroupFunctionPGN({src: 204, dst: 3, commandedPgn: 130817, pgnErrorCode: 1, transmissionOrPriorityErrorCode: 0}))
-
+module.exports = SignalKSocketcanDevice
